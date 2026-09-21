@@ -190,8 +190,7 @@ minimax_bot_d4 = make_minimax_bot(depth=4)   # stronger but slowe
 import torch
 from engine.board import board_to_tensor
 
-def make_neural_eval(model):
-    """Returns an eval function that uses the neural network."""
+def make_neural_eval(model, device='cpu'):
     model.eval()
     def neural_eval(board):
         if board.is_checkmate():
@@ -199,9 +198,9 @@ def make_neural_eval(model):
         if board.is_stalemate() or board.is_insufficient_material():
             return 0.0
         with torch.no_grad():
-            tensor = board_to_tensor(board).unsqueeze(0)  # add batch dim
+            tensor = board_to_tensor(board).unsqueeze(0).to(device)  # ← to GPU
             score = model(tensor).item()
-        return score * 10000   # scale to match material values
+        return score * 10000
     return neural_eval
 
 # Usage:
@@ -209,3 +208,30 @@ def make_neural_eval(model):
 # model = load_model('checkpoints/chess_net_v1.pth')
 # neural_eval = make_neural_eval(model)
 # neural_bot = make_minimax_bot(depth=3, eval_fn=neural_eval)
+
+
+def make_personality_eval(model, personality="balanced"):
+    """Wrap neural eval with a personality modifier."""
+    neural_eval = make_neural_eval(model)
+
+    def personality_eval(board):
+        score = neural_eval(board)
+
+        if personality == "greedy":   # Isabel mode
+            # Bonus for capturing enemy pawns with our queen
+            for sq in board.pieces(chess.PAWN, chess.BLACK):
+                if board.is_attacked_by(chess.WHITE, sq):
+                    score += 500
+            # Reward queen aggression
+            for sq in board.pieces(chess.QUEEN, chess.WHITE):
+                score += chess.square_rank(sq) * 20
+
+        elif personality == "defensive":
+            # Penalize any undefended piece
+            for sq in board.pieces(chess.PAWN, chess.WHITE):
+                if not board.is_attacked_by(chess.WHITE, sq):
+                    score -= 50
+
+        return score
+
+    return personality_eval
