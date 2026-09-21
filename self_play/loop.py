@@ -34,7 +34,7 @@ def generate_training_data(n_games=100, white_bot=None, black_bot=None):
     return tensors, labels
 
 
-def self_play_game(model, depth=2, device='cpu'):
+def self_play_game(model, depth=1, device='cpu'):
     from engine.search import make_minimax_bot, make_neural_eval
     from engine.board import board_to_tensor, get_result_value
     import chess
