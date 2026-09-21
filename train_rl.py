@@ -23,7 +23,7 @@ else:
     print("Starting fresh model")
 
 # ── Training loop ──
-N_ITERATIONS = 20
+N_ITERATIONS = 10
 
 for i in range(1, N_ITERATIONS + 1):
     print(f"\n{'='*50}")
@@ -45,8 +45,8 @@ for i in range(1, N_ITERATIONS + 1):
     # Benchmark every 5 iterations
     if i % 5 == 0:
         neural_eval = make_neural_eval(model, device=device)
-        neural_bot  = make_minimax_bot(depth=2, eval_fn=neural_eval)
-        baseline    = make_minimax_bot(depth=2)
+        neural_bot  = make_minimax_bot(depth=1, eval_fn=neural_eval)
+        baseline    = make_minimax_bot(depth=1)
         print(f"\n--- Benchmark at iteration {i} ---")
         tournament(neural_bot, baseline, n_games=10)
 
