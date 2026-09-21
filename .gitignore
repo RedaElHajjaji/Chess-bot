@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+*.pth          # model checkpoint files (can be large)
+data/          # self-play game data
+*.egg-info/
+.DS_Store
