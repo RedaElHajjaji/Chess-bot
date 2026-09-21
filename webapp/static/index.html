@@ -1,0 +1,42 @@
+<!-- webapp/static/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chess Bot</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+
+    <div class="board-wrap">
+      <div class="coords-top">
+        <span>a</span><span>b</span><span>c</span><span>d</span>
+        <span>e</span><span>f</span><span>g</span><span>h</span>
+      </div>
+      <div id="board"></div>   <!-- 64 square divs injected by JS -->
+    </div>
+
+    <aside class="sidebar">
+      <h1>♟ Chess Bot</h1>
+      <div id="status" class="status">Your turn (White)</div>
+      <div id="eval-bar" class="eval-bar"></div>
+
+      <div class="controls">
+        <button onclick="resetGame()">New game</button>
+        <button onclick="flipBoard()">Flip board</button>
+        <select id="difficulty" onchange="setDifficulty(this.value)">
+          <option value="1">Easy (depth 1)</option>
+          <option value="2">Medium (depth 2)</option>
+          <option value="3" selected>Hard (depth 3)</option>
+        </select>
+      </div>
+
+      <div id="move-list" class="move-list"></div>
+    </aside>
+
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>

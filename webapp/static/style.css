@@ -1,0 +1,80 @@
+/* webapp/static/style.css */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #1a1a1f;
+  color: #e0e0e8;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh;
+}
+
+.app { display: flex; gap: 24px; align-items: flex-start; padding: 24px; }
+
+#board {
+  display: grid;
+  grid-template-columns: repeat(8, 72px);
+  grid-template-rows: repeat(8, 72px);
+  border: 2px solid #3a3a4a;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.square {
+  width: 72px; height: 72px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 44px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.light { background: #f0d9b5; }
+.dark  { background: #b58863; }
+
+.selected   { background: #f6f669 !important; }
+.last-move  { background: rgba(255, 255, 100, 0.35) !important; }
+.in-check   { background: rgba(255, 60, 60, 0.55) !important; }
+
+.legal-dot::after {
+  content: '';
+  position: absolute;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.legal-capture::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 5px solid rgba(0,0,0,0.25);
+  border-radius: 50%;
+}
+
+/* Piece font (Unicode fallback if no SVGs) */
+.piece-white { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+.piece-black { color: #1a1a1a; text-shadow: 0 1px 2px rgba(255,255,255,0.3); }
+
+/* Sidebar */
+.sidebar { width: 220px; }
+.sidebar h1 { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
+.status { font-size: 14px; color: #a0a0b0; margin-bottom: 12px; }
+
+.eval-bar {
+  height: 8px; background: #333;
+  border-radius: 4px; overflow: hidden; margin-bottom: 16px;
+}
+
+.controls { display: flex; flex-direction: column; gap: 8px; }
+.controls button, .controls select {
+  padding: 8px 12px; border: 1px solid #3a3a4a;
+  background: #22222a; color: #e0e0e8;
+  border-radius: 6px; cursor: pointer; font-size: 13px;
+  transition: background 0.15s;
+}
+.controls button:hover { background: #2e2e3a; }
+
+.move-list { margin-top: 16px; font-family: monospace; font-size: 12px;
+             color: #888; max-height: 300px; overflow-y: auto; }
