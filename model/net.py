@@ -27,7 +27,7 @@ class ChessNet(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(channels * 2 * 64, 256),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.5),
             nn.Linear(256, 64),
             nn.ReLU(),
             nn.Linear(64, 1),

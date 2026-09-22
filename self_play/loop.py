@@ -114,8 +114,8 @@ def generate_parallel(checkpoint_path, n_games=30, depth=2, n_workers=4):
 
 
 # ── UPDATED: training_iteration now uses parallel generation ──
-def training_iteration(model, iteration, games_per_iter=30,
-                       epochs=10, device='cpu', n_workers=4):
+def training_iteration(model, iteration, games_per_iter=300,
+                       epochs=5, device='cpu', n_workers=4):
     import torch.nn as nn
     from torch.utils.data import TensorDataset, DataLoader
 
