@@ -2,7 +2,7 @@
 import torch
 import os
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from multiprocessing import get_context
 from engine.search import play_game, make_minimax_bot, random_move
 
 def generate_training_data(n_games=100, white_bot=None, black_bot=None):
@@ -89,33 +89,31 @@ def self_play_game_wrapper(args):
     return pairs
 
 
-def generate_parallel(checkpoint_path, n_games=300, depth=2, n_workers=4):
-    """Run n_games in parallel using ProcessPoolExecutor."""
+def generate_parallel(checkpoint_path, n_games=100, depth=2, n_workers=4):
+    """Run n_games in parallel using spawn context — stable on Kaggle."""
     args = [(checkpoint_path, depth)] * n_games
     all_pairs = []
     completed = 0
 
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
-        futures = [executor.submit(self_play_game_wrapper, arg)
-                   for arg in args]
-
-        for future in tqdm(as_completed(futures), total=n_games,
-                           desc="🎮 Generating games (parallel)"):
-            try:
-                pairs = future.result(timeout=120)
-                all_pairs.extend(pairs)
-                completed += 1
-                if completed % 10 == 0:
-                    tqdm.write(f"  {completed}/{n_games} games done, "
-                               f"{len(all_pairs)} positions collected")
-            except Exception as e:
-                tqdm.write(f"  ⚠ Game failed: {e} — skipping")
-                continue
+    ctx = get_context('spawn')
+    with ctx.Pool(processes=n_workers) as pool:
+        for i, pairs in enumerate(
+            tqdm(
+                pool.imap_unordered(self_play_game_wrapper, args),
+                total=n_games,
+                desc="🎮 Generating games (parallel)"
+            )
+        ):
+            all_pairs.extend(pairs)
+            completed += 1
+            if completed % 10 == 0:
+                tqdm.write(f"  {completed}/{n_games} games done, "
+                           f"{len(all_pairs)} positions collected")
 
     return all_pairs
 
 
-def training_iteration(model, iteration, games_per_iter=300,
+def training_iteration(model, iteration, games_per_iter=100,
                        epochs=5, device='cpu', n_workers=4):
     import torch.nn as nn
     from torch.utils.data import TensorDataset, DataLoader

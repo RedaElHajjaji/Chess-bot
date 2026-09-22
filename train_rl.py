@@ -36,29 +36,26 @@ for i in range(1, N_ITERATIONS + 1):
     model = training_iteration(
         model,
         iteration=i,
-        games_per_iter=300,   # double for more diversity
-        epochs=5,             # reduced from 10 to prevent memorization
+        games_per_iter=100,    # fast — ~3 min per iteration
+        epochs=5,
         device=device,
         n_workers=4
     )
 
-    # Save locally
+    # Save to both local and Kaggle output
     torch.save(model.state_dict(), f'checkpoints/chess_net_iter{i}.pth')
     torch.save(model.state_dict(), 'checkpoints/chess_net_latest.pth')
-
-    # Save to Kaggle output folder so it persists after session ends
     shutil.copy('checkpoints/chess_net_latest.pth',
-                f'/kaggle/working/chess_net_latest.pth')
+                '/kaggle/working/chess_net_latest.pth')
     shutil.copy(f'checkpoints/chess_net_iter{i}.pth',
                 f'/kaggle/working/chess_net_iter{i}.pth')
     print(f"✓ Saved to Kaggle output: iter{i}")
 
-    # Benchmark every 5 iterations — neural vs its own past self
+    # Benchmark every 5 iterations
     if i % 5 == 0:
         neural_eval = make_neural_eval(model, device=device)
         neural_bot  = make_minimax_bot(depth=2, eval_fn=neural_eval)
 
-        # Compare against iteration 1 as fixed baseline
         iter1_path = 'checkpoints/chess_net_iter1.pth'
         if os.path.exists(iter1_path):
             from model.net import load_model as lm
@@ -68,7 +65,6 @@ for i in range(1, N_ITERATIONS + 1):
             print(f"\n--- Benchmark: iter{i} vs iter1 ---")
             tournament(neural_bot, early_bot, n_games=10)
         else:
-            # Fallback to handcrafted baseline
             baseline = make_minimax_bot(depth=2)
             print(f"\n--- Benchmark: iter{i} vs handcrafted ---")
             tournament(neural_bot, baseline, n_games=10)
