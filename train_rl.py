@@ -36,6 +36,7 @@ for i in range(1, N_ITERATIONS + 1):
         games_per_iter=150,
         epochs=10,
         device=device        # ← pass device through
+        n_workers=4 
     )
 
     # Save latest after every iteration
