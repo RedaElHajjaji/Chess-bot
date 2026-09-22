@@ -2,10 +2,9 @@
 import torch
 import os
 from tqdm import tqdm
-from multiprocessing import Pool
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from engine.search import play_game, make_minimax_bot, random_move
 
-# ── Keep this exactly as before ──
 def generate_training_data(n_games=100, white_bot=None, black_bot=None):
     if white_bot is None:
         white_bot = make_minimax_bot(depth=2)
@@ -35,8 +34,7 @@ def generate_training_data(n_games=100, white_bot=None, black_bot=None):
     return tensors, labels
 
 
-# ── Keep this exactly as before ──
-def self_play_game(model, depth=1, device='cpu'):
+def self_play_game(model, depth=2, device='cpu'):
     from engine.search import make_minimax_bot, make_neural_eval
     from engine.board import board_to_tensor, get_result_value
     import chess
@@ -61,7 +59,6 @@ def self_play_game(model, depth=1, device='cpu'):
     return training_pairs
 
 
-# ── NEW: worker function for parallel generation ──
 def self_play_game_wrapper(args):
     """Wrapper for multiprocessing — loads model independently per worker."""
     checkpoint_path, depth = args
@@ -92,28 +89,32 @@ def self_play_game_wrapper(args):
     return pairs
 
 
-# ── NEW: parallel game generator ──
-def generate_parallel(checkpoint_path, n_games=30, depth=2, n_workers=4):
-    """Run n_games in parallel across n_workers CPU cores."""
+def generate_parallel(checkpoint_path, n_games=300, depth=2, n_workers=4):
+    """Run n_games in parallel using ProcessPoolExecutor."""
     args = [(checkpoint_path, depth)] * n_games
     all_pairs = []
+    completed = 0
 
-    with Pool(processes=n_workers) as pool:
-        for i, pairs in enumerate(
-            tqdm(
-                pool.imap_unordered(self_play_game_wrapper, args),
-                total=n_games,
-                desc="🎮 Generating games (parallel)"
-            )
-        ):
-            all_pairs.extend(pairs)
-            if (i + 1) % 10 == 0:
-                tqdm.write(f"  {i+1}/{n_games} games done, {len(all_pairs)} positions collected")
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        futures = [executor.submit(self_play_game_wrapper, arg)
+                   for arg in args]
+
+        for future in tqdm(as_completed(futures), total=n_games,
+                           desc="🎮 Generating games (parallel)"):
+            try:
+                pairs = future.result(timeout=120)
+                all_pairs.extend(pairs)
+                completed += 1
+                if completed % 10 == 0:
+                    tqdm.write(f"  {completed}/{n_games} games done, "
+                               f"{len(all_pairs)} positions collected")
+            except Exception as e:
+                tqdm.write(f"  ⚠ Game failed: {e} — skipping")
+                continue
 
     return all_pairs
 
 
-# ── UPDATED: training_iteration now uses parallel generation ──
 def training_iteration(model, iteration, games_per_iter=300,
                        epochs=5, device='cpu', n_workers=4):
     import torch.nn as nn
@@ -122,14 +123,21 @@ def training_iteration(model, iteration, games_per_iter=300,
     print(f"\n=== Iteration {iteration} — Generating {games_per_iter} games "
           f"across {n_workers} workers ===")
 
-    # Save temp checkpoint for workers to load
     tmp_path = 'checkpoints/tmp_worker.pth'
     os.makedirs('checkpoints', exist_ok=True)
     torch.save(model.state_dict(), tmp_path)
 
-    # Generate games in parallel
-    all_pairs = generate_parallel(tmp_path, n_games=games_per_iter,
-                                  depth=1, n_workers=n_workers)
+    try:
+        all_pairs = generate_parallel(tmp_path, n_games=games_per_iter,
+                                      depth=2, n_workers=n_workers)
+        if len(all_pairs) == 0:
+            raise Exception("No pairs generated")
+    except Exception as e:
+        print(f"⚠ Parallel failed ({e}) — falling back to sequential")
+        all_pairs = []
+        for _ in tqdm(range(games_per_iter), desc="🎮 Sequential games"):
+            pairs = self_play_game(model, depth=2, device='cpu')
+            all_pairs.extend(pairs)
 
     tensors = torch.stack([
         p[0] if isinstance(p[0], torch.Tensor) else torch.tensor(p[0])
@@ -157,7 +165,8 @@ def training_iteration(model, iteration, games_per_iter=300,
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-        tqdm.write(f"  Epoch {epoch+1}/{epochs}  loss: {total_loss/len(loader):.4f}")
+        tqdm.write(f"  Epoch {epoch+1}/{epochs}  "
+                   f"loss: {total_loss/len(loader):.4f}")
 
     path = f'checkpoints/chess_net_iter{iteration}.pth'
     torch.save(model.state_dict(), path)
