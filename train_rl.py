@@ -3,6 +3,8 @@ import torch
 import os
 import sys
 import shutil
+import json
+import subprocess
 sys.path.insert(0, '/kaggle/working/Chess-bot')
 
 from model.net import ChessNet, load_model
@@ -23,7 +25,43 @@ else:
     print("Starting fresh model")
 
 os.makedirs('checkpoints', exist_ok=True)
-os.makedirs('/kaggle/working', exist_ok=True)
+os.makedirs('/kaggle/working/chess-checkpoints', exist_ok=True)
+
+# ── Kaggle Dataset push function ──
+KAGGLE_USERNAME = "redaelhajjaji"   # ← your Kaggle username
+DATASET_ID = f"{KAGGLE_USERNAME}/chess-bot-checkpoints"
+DATASET_DIR = '/kaggle/working/chess-checkpoints'
+
+def push_to_dataset(iteration):
+    """Push checkpoint to persistent Kaggle Dataset after every iteration."""
+    # Copy checkpoints to dataset folder
+    shutil.copy(f'checkpoints/chess_net_iter{iteration}.pth',
+                f'{DATASET_DIR}/chess_net_iter{iteration}.pth')
+    shutil.copy('checkpoints/chess_net_latest.pth',
+                f'{DATASET_DIR}/chess_net_latest.pth')
+
+    # Write metadata
+    meta = {
+        "title": "chess-bot-checkpoints",
+        "id": DATASET_ID,
+        "licenses": [{"name": "CC0-1.0"}]
+    }
+    with open(f'{DATASET_DIR}/dataset-metadata.json', 'w') as f:
+        json.dump(meta, f)
+
+    # Push new version
+    result = subprocess.run(
+        ['kaggle', 'datasets', 'version',
+         '-p', DATASET_DIR,
+         '-m', f'iter{iteration}',
+         '--dir-mode', 'zip'],
+        capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        print(f"✓ Pushed iter{iteration} to Kaggle Dataset")
+    else:
+        print(f"⚠ Dataset push failed: {result.stderr}")
+        print(f"  (checkpoint still saved to /kaggle/working/ as backup)")
 
 # ── Training loop ──
 N_ITERATIONS = 20
@@ -37,17 +75,25 @@ for i in range(1, N_ITERATIONS + 1):
         model,
         iteration=i,
         games_per_iter=50,
-        epochs=5,
+        epochs=3,            # reduced to prevent memorization
         device=device,
         n_workers=4
     )
 
-    # Save to Kaggle output after every iteration
+    # Save locally
+    torch.save(model.state_dict(), f'checkpoints/chess_net_iter{i}.pth')
+    torch.save(model.state_dict(), 'checkpoints/chess_net_latest.pth')
+
+    # Save to /kaggle/working/ output
     shutil.copy('checkpoints/chess_net_latest.pth',
                 '/kaggle/working/chess_net_latest.pth')
     shutil.copy(f'checkpoints/chess_net_iter{i}.pth',
                 f'/kaggle/working/chess_net_iter{i}.pth')
-    print(f"✓ Saved to Kaggle output: iter{i}")
+
+    # Push to persistent Kaggle Dataset
+    push_to_dataset(i)
+
+    print(f"✓ iter{i} saved everywhere — safe to stop anytime")
 
     # Benchmark every 5 iterations
     if i % 5 == 0:

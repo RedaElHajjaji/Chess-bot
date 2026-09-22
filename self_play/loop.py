@@ -23,7 +23,8 @@ def generate_training_data(n_games=100, white_bot=None, black_bot=None):
             all_labels.append(torch.tensor(label, dtype=torch.float32))
 
         if (i + 1) % 10 == 0:
-            tqdm.write(f"  Game {i+1}: result={result_str}, positions so far={len(all_tensors)}")
+            tqdm.write(f"  Game {i+1}: result={result_str}, "
+                      f"positions so far={len(all_tensors)}")
 
     tensors = torch.stack(all_tensors)
     labels  = torch.stack(all_labels)
@@ -56,12 +57,15 @@ def self_play_game(cpu_model, depth=2):
     training_pairs = []
     for tensor, turn in history:
         label = result if turn else -result
-        training_pairs.append((tensor, torch.tensor(label, dtype=torch.float32)))
+        training_pairs.append((
+            tensor,
+            torch.tensor(float(label), dtype=torch.float32)
+        ))
     return training_pairs
 
 
 def generate_sequential(cpu_model, n_games=50, depth=2):
-    """Sequential game generation — cpu_model stays on CPU throughout."""
+    """Sequential game generation — no multiprocessing."""
     all_pairs = []
 
     for i in tqdm(range(n_games), desc="🎮 Generating games"):
@@ -75,7 +79,7 @@ def generate_sequential(cpu_model, n_games=50, depth=2):
 
 
 def training_iteration(model, iteration, games_per_iter=50,
-                       epochs=5, device='cpu', n_workers=4):
+                       epochs=3, device='cpu', n_workers=4):
     import torch.nn as nn
     from torch.utils.data import TensorDataset, DataLoader
     from model.net import ChessNet
@@ -87,21 +91,26 @@ def training_iteration(model, iteration, games_per_iter=50,
     tmp_path = 'checkpoints/tmp_worker.pth'
     torch.save(model.state_dict(), tmp_path)
 
-    # Load a separate CPU-only copy for game generation
+    # Load separate CPU copy for game generation
     cpu_model = ChessNet()
     cpu_model.load_state_dict(torch.load(tmp_path, map_location='cpu'))
     cpu_model.eval()
 
     # Generate games on CPU
-    all_pairs = generate_sequential(cpu_model, n_games=games_per_iter, depth=2)
+    all_pairs = generate_sequential(cpu_model,
+                                    n_games=games_per_iter,
+                                    depth=2)
 
-    # Move data to GPU for training
+    # Move data to training device
     tensors = torch.stack([
-        p[0] if isinstance(p[0], torch.Tensor) else torch.tensor(p[0])
+        p[0] if isinstance(p[0], torch.Tensor)
+        else torch.tensor(p[0])
         for p in all_pairs
     ]).to(device)
     labels = torch.stack([
-        torch.tensor(p[1], dtype=torch.float32)
+        p[1].detach().clone().float()
+        if isinstance(p[1], torch.Tensor)
+        else torch.tensor(float(p[1]), dtype=torch.float32)
         for p in all_pairs
     ]).to(device)
 
@@ -113,6 +122,7 @@ def training_iteration(model, iteration, games_per_iter=50,
     loss_fn   = nn.MSELoss()
     model.train()
 
+    prev_loss = 999
     for epoch in tqdm(range(epochs), desc="🧠 Training", unit="epoch"):
         total_loss = 0
         for X, y in loader:
@@ -122,8 +132,15 @@ def training_iteration(model, iteration, games_per_iter=50,
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-        tqdm.write(f"  Epoch {epoch+1}/{epochs}  "
-                   f"loss: {total_loss/len(loader):.4f}")
+
+        avg_loss = total_loss / len(loader)
+        tqdm.write(f"  Epoch {epoch+1}/{epochs}  loss: {avg_loss:.4f}")
+
+        # Early stop if loss is good enough — prevents memorization
+        if avg_loss < 0.005:
+            tqdm.write(f"  ⚡ Early stop — loss below threshold")
+            break
+        prev_loss = avg_loss
 
     path = f'checkpoints/chess_net_iter{iteration}.pth'
     torch.save(model.state_dict(), path)
