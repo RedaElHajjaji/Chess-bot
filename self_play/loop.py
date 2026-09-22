@@ -93,7 +93,7 @@ def self_play_game_wrapper(args):
 
 
 # ── NEW: parallel game generator ──
-def generate_parallel(checkpoint_path, n_games=30, depth=1, n_workers=4):
+def generate_parallel(checkpoint_path, n_games=30, depth=2, n_workers=4):
     """Run n_games in parallel across n_workers CPU cores."""
     args = [(checkpoint_path, depth)] * n_games
     all_pairs = []
