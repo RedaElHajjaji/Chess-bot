@@ -2,8 +2,8 @@
 import torch
 import os
 from tqdm import tqdm
-from multiprocessing import get_context
 from engine.search import play_game, make_minimax_bot, random_move
+
 
 def generate_training_data(n_games=100, white_bot=None, black_bot=None):
     if white_bot is None:
@@ -59,83 +59,32 @@ def self_play_game(model, depth=2, device='cpu'):
     return training_pairs
 
 
-def self_play_game_wrapper(args):
-    """Wrapper for multiprocessing — loads model independently per worker."""
-    checkpoint_path, depth = args
-    import torch
-    from model.net import load_model
-    from engine.search import make_minimax_bot, make_neural_eval
-    from engine.board import board_to_tensor, get_result_value
-    import chess
-
-    model = load_model(checkpoint_path, device='cpu')
-    neural_eval = make_neural_eval(model, device='cpu')
-    bot = make_minimax_bot(depth=depth, eval_fn=neural_eval)
-
-    board = chess.Board()
-    history = []
-
-    while not board.is_game_over() and len(board.move_stack) < 200:
-        tensor = board_to_tensor(board)
-        history.append((tensor, board.turn))
-        move = bot(board)
-        board.push(move)
-
-    result = get_result_value(board)
-    pairs = []
-    for tensor, turn in history:
-        label = result if turn else -result
-        pairs.append((tensor, label))
-    return pairs
-
-
-def generate_parallel(checkpoint_path, n_games=100, depth=2, n_workers=4):
-    """Run n_games in parallel using spawn context — stable on Kaggle."""
-    args = [(checkpoint_path, depth)] * n_games
+def generate_sequential(model, n_games=50, depth=2, device='cpu'):
+    """Simple sequential game generation — no multiprocessing."""
     all_pairs = []
-    completed = 0
 
-    ctx = get_context('spawn')
-    with ctx.Pool(processes=n_workers) as pool:
-        for i, pairs in enumerate(
-            tqdm(
-                pool.imap_unordered(self_play_game_wrapper, args),
-                total=n_games,
-                desc="🎮 Generating games (parallel)"
-            )
-        ):
-            all_pairs.extend(pairs)
-            completed += 1
-            if completed % 10 == 0:
-                tqdm.write(f"  {completed}/{n_games} games done, "
-                           f"{len(all_pairs)} positions collected")
+    for i in tqdm(range(n_games), desc="🎮 Generating games"):
+        pairs = self_play_game(model, depth=depth, device='cpu')
+        all_pairs.extend(pairs)
+        if (i + 1) % 10 == 0:
+            tqdm.write(f"  {i+1}/{n_games} games done, "
+                      f"{len(all_pairs)} positions collected")
 
     return all_pairs
 
 
-def training_iteration(model, iteration, games_per_iter=100,
+def training_iteration(model, iteration, games_per_iter=50,
                        epochs=5, device='cpu', n_workers=4):
     import torch.nn as nn
     from torch.utils.data import TensorDataset, DataLoader
 
-    print(f"\n=== Iteration {iteration} — Generating {games_per_iter} games "
-          f"across {n_workers} workers ===")
+    print(f"\n=== Iteration {iteration} — Generating {games_per_iter} games ===")
 
-    tmp_path = 'checkpoints/tmp_worker.pth'
     os.makedirs('checkpoints', exist_ok=True)
-    torch.save(model.state_dict(), tmp_path)
 
-    try:
-        all_pairs = generate_parallel(tmp_path, n_games=games_per_iter,
-                                      depth=2, n_workers=n_workers)
-        if len(all_pairs) == 0:
-            raise Exception("No pairs generated")
-    except Exception as e:
-        print(f"⚠ Parallel failed ({e}) — falling back to sequential")
-        all_pairs = []
-        for _ in tqdm(range(games_per_iter), desc="🎮 Sequential games"):
-            pairs = self_play_game(model, depth=2, device='cpu')
-            all_pairs.extend(pairs)
+    # Sequential — no multiprocessing, no deadlocks
+    all_pairs = generate_sequential(model, n_games=games_per_iter,
+                                    depth=2, device=device)
 
     tensors = torch.stack([
         p[0] if isinstance(p[0], torch.Tensor) else torch.tensor(p[0])
