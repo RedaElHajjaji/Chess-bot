@@ -137,8 +137,7 @@ def training_iteration(model, iteration, games_per_iter=50,
 
     print(f"📦 {len(tensors)} positions → training on {device}...")
     dataset = TensorDataset(tensors, labels)
-    loader  = DataLoader(dataset, batch_size=512,   # larger batch = faster GPU
-                         shuffle=True, pin_memory=True)
+    loader = DataLoader(dataset, batch_size=512, shuffle=True)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_fn   = nn.MSELoss()
