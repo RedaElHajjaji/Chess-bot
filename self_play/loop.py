@@ -34,12 +34,13 @@ def generate_training_data(n_games=100, white_bot=None, black_bot=None):
     return tensors, labels
 
 
-def self_play_game(model, depth=2, device='cpu'):
+def self_play_game(cpu_model, depth=2):
+    """Always runs on CPU — cpu_model must already be on CPU."""
     from engine.search import make_minimax_bot, make_neural_eval
     from engine.board import board_to_tensor, get_result_value
     import chess
 
-    neural_eval = make_neural_eval(model, device=device)
+    neural_eval = make_neural_eval(cpu_model, device='cpu')
     bot = make_minimax_bot(depth=depth, eval_fn=neural_eval)
 
     board = chess.Board()
@@ -59,12 +60,12 @@ def self_play_game(model, depth=2, device='cpu'):
     return training_pairs
 
 
-def generate_sequential(model, n_games=50, depth=2, device='cpu'):
-    """Simple sequential game generation — no multiprocessing."""
+def generate_sequential(cpu_model, n_games=50, depth=2):
+    """Sequential game generation — cpu_model stays on CPU throughout."""
     all_pairs = []
 
     for i in tqdm(range(n_games), desc="🎮 Generating games"):
-        pairs = self_play_game(model, depth=depth, device='cpu')
+        pairs = self_play_game(cpu_model, depth=depth)
         all_pairs.extend(pairs)
         if (i + 1) % 10 == 0:
             tqdm.write(f"  {i+1}/{n_games} games done, "
@@ -77,15 +78,24 @@ def training_iteration(model, iteration, games_per_iter=50,
                        epochs=5, device='cpu', n_workers=4):
     import torch.nn as nn
     from torch.utils.data import TensorDataset, DataLoader
+    from model.net import ChessNet
 
     print(f"\n=== Iteration {iteration} — Generating {games_per_iter} games ===")
-
     os.makedirs('checkpoints', exist_ok=True)
 
-    # Sequential — no multiprocessing, no deadlocks
-    all_pairs = generate_sequential(model, n_games=games_per_iter,
-                                    depth=2, device=device)
+    # Save current weights to temp file
+    tmp_path = 'checkpoints/tmp_worker.pth'
+    torch.save(model.state_dict(), tmp_path)
 
+    # Load a separate CPU-only copy for game generation
+    cpu_model = ChessNet()
+    cpu_model.load_state_dict(torch.load(tmp_path, map_location='cpu'))
+    cpu_model.eval()
+
+    # Generate games on CPU
+    all_pairs = generate_sequential(cpu_model, n_games=games_per_iter, depth=2)
+
+    # Move data to GPU for training
     tensors = torch.stack([
         p[0] if isinstance(p[0], torch.Tensor) else torch.tensor(p[0])
         for p in all_pairs

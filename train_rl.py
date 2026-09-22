@@ -23,7 +23,7 @@ else:
     print("Starting fresh model")
 
 os.makedirs('checkpoints', exist_ok=True)
-os.makedirs('/kaggle/working/checkpoints', exist_ok=True)
+os.makedirs('/kaggle/working', exist_ok=True)
 
 # ── Training loop ──
 N_ITERATIONS = 20
@@ -36,15 +36,13 @@ for i in range(1, N_ITERATIONS + 1):
     model = training_iteration(
         model,
         iteration=i,
-        games_per_iter=100,    # fast — ~3 min per iteration
+        games_per_iter=50,
         epochs=5,
         device=device,
         n_workers=4
     )
 
-    # Save to both local and Kaggle output
-    torch.save(model.state_dict(), f'checkpoints/chess_net_iter{i}.pth')
-    torch.save(model.state_dict(), 'checkpoints/chess_net_latest.pth')
+    # Save to Kaggle output after every iteration
     shutil.copy('checkpoints/chess_net_latest.pth',
                 '/kaggle/working/chess_net_latest.pth')
     shutil.copy(f'checkpoints/chess_net_iter{i}.pth',
