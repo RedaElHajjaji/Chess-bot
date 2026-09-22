@@ -35,7 +35,7 @@ for i in range(1, N_ITERATIONS + 1):
         iteration=i,
         games_per_iter=150,
         epochs=10,
-        device=device        # ← pass device through
+        device=device,        # ← pass device through
         n_workers=4 
     )
 
