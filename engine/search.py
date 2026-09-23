@@ -40,26 +40,37 @@ def play_game(white_fn, black_fn, max_moves=200):
 
 # Add to engine/search.py
 
-def tournament(bot_a, bot_b, n_games=50):
+def tournament(bot_a, bot_b, n_games=10):
     """
-    Play n_games between bot_a (White) and bot_b (Black).
-    Returns win rate for bot_a.
+    Tournament with 300 move limit — allows decisive results.
+    No short move cap so games can reach checkmate.
     """
+    import chess
     wins = draws = losses = 0
 
     for i in tqdm(range(n_games), desc="🏆 Tournament", unit="game"):
-        _, _, result = play_game(bot_a, bot_b)
-        if result == "1-0": wins += 1
-        elif result == "0-1": losses += 1
-        else: draws += 1
+        board = chess.Board()
+        move_count = 0
 
-        # Live score update every game
+        while not board.is_game_over() and move_count < 300:
+            if board.turn == chess.WHITE:
+                move = bot_a(board)
+            else:
+                move = bot_b(board)
+            board.push(move)
+            move_count += 1
+
+        result = board.result()
+        if result == "1-0":    wins += 1
+        elif result == "0-1":  losses += 1
+        else:                  draws += 1
+
         tqdm.write(f"  Game {i+1}: {result} | W:{wins} D:{draws} L:{losses}")
 
     win_rate = (wins + 0.5 * draws) / n_games
-    print(f"\n✓ Final — W:{wins} D:{draws} L:{losses} | Win rate: {win_rate:.2%}")
+    print(f"\n✓ Final — W:{wins} D:{draws} L:{losses} | "
+          f"Win rate: {win_rate:.2%}")
     return win_rate
-
 
 
 # Add to engine/search.py

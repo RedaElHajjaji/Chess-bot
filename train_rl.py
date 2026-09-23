@@ -96,21 +96,24 @@ for i in range(1, N_ITERATIONS + 1):
     print(f"✓ iter{i} saved everywhere — safe to stop anytime")
 
     # Benchmark every 5 iterations
+    # Benchmark every 5 iterations — depth 1 to match training
     if i % 5 == 0:
-        neural_eval = make_neural_eval(model, device=device)
-        neural_bot  = make_minimax_bot(depth=2, eval_fn=neural_eval)
+        from model.net import load_model as lm
+
+        # Current bot at depth 1
+        neural_eval = make_neural_eval(model, device='cpu')
+        neural_bot  = make_minimax_bot(depth=1, eval_fn=neural_eval)
 
         iter1_path = 'checkpoints/chess_net_iter1.pth'
         if os.path.exists(iter1_path):
-            from model.net import load_model as lm
             early_model = lm(iter1_path, device='cpu')
             early_eval  = make_neural_eval(early_model, device='cpu')
-            early_bot   = make_minimax_bot(depth=2, eval_fn=early_eval)
-            print(f"\n--- Benchmark: iter{i} vs iter1 ---")
+            early_bot   = make_minimax_bot(depth=1, eval_fn=early_eval)
+            print(f"\n--- Benchmark: iter{i} vs iter1 (depth 1) ---")
             tournament(neural_bot, early_bot, n_games=10)
         else:
-            baseline = make_minimax_bot(depth=2)
-            print(f"\n--- Benchmark: iter{i} vs handcrafted ---")
+            baseline = make_minimax_bot(depth=1)
+            print(f"\n--- Benchmark: iter{i} vs handcrafted (depth 1) ---")
             tournament(neural_bot, baseline, n_games=10)
 
 print("\n✓ Training complete!")

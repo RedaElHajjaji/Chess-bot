@@ -39,15 +39,14 @@ def generate_training_data(n_games=100, white_bot=None, black_bot=None):
 
 def generate_threaded(cpu_model, n_games=50, depth=1, n_workers=4):
     """
-    Fast threaded game generation.
-    depth=1 is 4-8x faster than depth=2.
-    move cap=60 keeps games short.
+    Threaded game generation.
+    depth=1 for speed.
+    move cap=150 so games reach decisive conclusions.
     """
     from engine.board import board_to_tensor, get_result_value
     from engine.search import make_neural_eval, make_minimax_bot
     import chess
 
-    # Build eval and bot once — shared across threads (read-only)
     neural_eval = make_neural_eval(cpu_model, device='cpu')
     bot = make_minimax_bot(depth=depth, eval_fn=neural_eval)
 
@@ -55,7 +54,7 @@ def generate_threaded(cpu_model, n_games=50, depth=1, n_workers=4):
         board = chess.Board()
         history = []
 
-        while not board.is_game_over() and len(board.move_stack) < 60:
+        while not board.is_game_over() and len(board.move_stack) < 150:
             tensor = board_to_tensor(board)
             history.append((tensor, board.turn))
             move = bot(board)
@@ -103,16 +102,13 @@ def training_iteration(model, iteration, games_per_iter=50,
     print(f"\n=== Iteration {iteration} — Generating {games_per_iter} games ===")
     os.makedirs('checkpoints', exist_ok=True)
 
-    # Save current weights to temp file
     tmp_path = 'checkpoints/tmp_worker.pth'
     torch.save(model.state_dict(), tmp_path)
 
-    # Load separate CPU copy for game generation
     cpu_model = ChessNet()
     cpu_model.load_state_dict(torch.load(tmp_path, map_location='cpu'))
     cpu_model.eval()
 
-    # Generate games — depth 1, 60 move cap, 4 threads
     all_pairs = generate_threaded(cpu_model,
                                   n_games=games_per_iter,
                                   depth=1,
@@ -122,7 +118,6 @@ def training_iteration(model, iteration, games_per_iter=50,
         print("⚠ No pairs generated — skipping iteration")
         return model
 
-    # Move data to GPU
     tensors = torch.stack([
         p[0] if isinstance(p[0], torch.Tensor)
         else torch.tensor(p[0])
@@ -137,7 +132,7 @@ def training_iteration(model, iteration, games_per_iter=50,
 
     print(f"📦 {len(tensors)} positions → training on {device}...")
     dataset = TensorDataset(tensors, labels)
-    loader = DataLoader(dataset, batch_size=512, shuffle=True)
+    loader  = DataLoader(dataset, batch_size=512, shuffle=True)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_fn   = nn.MSELoss()
@@ -149,7 +144,7 @@ def training_iteration(model, iteration, games_per_iter=50,
         total_loss = 0
         for X, y in loader:
             X, y = X.to(device), y.to(device)
-            optimizer.zero_grad(set_to_none=True)   # faster than zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss = loss_fn(model(X), y)
             loss.backward()
             optimizer.step()
