@@ -97,10 +97,12 @@ for i in range(1, N_ITERATIONS + 1):
 
     # Benchmark every 5 iterations
     # Benchmark every 5 iterations — depth 1 to match training
+    # Benchmark every 5 iterations — depth 1 to match training
     if i % 5 == 0:
         from model.net import load_model as lm
 
-        # Current bot at depth 1
+        # Move current model to CPU for benchmark
+        model.cpu()
         neural_eval = make_neural_eval(model, device='cpu')
         neural_bot  = make_minimax_bot(depth=1, eval_fn=neural_eval)
 
@@ -115,5 +117,8 @@ for i in range(1, N_ITERATIONS + 1):
             baseline = make_minimax_bot(depth=1)
             print(f"\n--- Benchmark: iter{i} vs handcrafted (depth 1) ---")
             tournament(neural_bot, baseline, n_games=10)
+
+        # Move model back to GPU for next training iteration
+        model.to(device)
 
 print("\n✓ Training complete!")
