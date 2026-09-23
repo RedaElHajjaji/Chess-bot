@@ -4,6 +4,7 @@ import os
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from engine.search import play_game, make_minimax_bot, random_move
+from model.net import MOVE_TO_IDX, NUM_MOVES
 
 
 def generate_training_data(n_games=100, white_bot=None, black_bot=None):
@@ -37,125 +38,162 @@ def generate_training_data(n_games=100, white_bot=None, black_bot=None):
     return tensors, labels
 
 
-def generate_threaded(cpu_model, n_games=50, depth=1, n_workers=4):
+def self_play_game_mcts(model, device='cuda', n_simulations=100):
     """
-    Threaded game generation.
-    depth=1 for speed.
-    move cap=150 so games reach decisive conclusions.
+    Play one game using MCTS.
+    Returns list of (board_tensor, policy_target, value_target).
     """
+    from engine.mcts import MCTS
     from engine.board import board_to_tensor, get_result_value
-    from engine.search import make_neural_eval, make_minimax_bot
     import chess
 
-    neural_eval = make_neural_eval(cpu_model, device='cpu')
-    bot = make_minimax_bot(depth=depth, eval_fn=neural_eval)
+    mcts = MCTS(model, device=device, n_simulations=n_simulations)
+    board = chess.Board()
+    history = []   # (tensor, move_probs, turn)
 
-    def play_one_game(_):
-        board = chess.Board()
-        history = []
+    move_count = 0
+    while not board.is_game_over() and move_count < 150:
+        # Get move probabilities from MCTS
+        temp = 1.0 if move_count < 20 else 0.1
+        move_probs = mcts.get_move_probs(board, temperature=temp)
 
-        while not board.is_game_over() and len(board.move_stack) < 150:
-            tensor = board_to_tensor(board)
-            history.append((tensor, board.turn))
-            move = bot(board)
-            board.push(move)
+        # Record position
+        tensor = board_to_tensor(board)
 
-        result = get_result_value(board)
-        pairs = []
-        for tensor, turn in history:
-            label = result if turn else -result
-            pairs.append((
-                tensor,
-                torch.tensor(float(label), dtype=torch.float32)
-            ))
-        return pairs
+        # Build policy target vector
+        policy_target = torch.zeros(NUM_MOVES)
+        for move, prob in move_probs.items():
+            idx = MOVE_TO_IDX.get(move.uci(), 0)
+            policy_target[idx] = prob
 
-    all_pairs = []
-    completed = 0
+        history.append((tensor, policy_target, board.turn))
 
-    with ThreadPoolExecutor(max_workers=n_workers) as executor:
-        futures = [executor.submit(play_one_game, i)
-                   for i in range(n_games)]
+        # Select and play move
+        moves = list(move_probs.keys())
+        probs = list(move_probs.values())
+        import numpy as np
+        probs_arr = np.array(probs)
+        probs_arr = probs_arr / probs_arr.sum()
+        move = moves[np.random.choice(len(moves), p=probs_arr)]
+        board.push(move)
+        move_count += 1
 
-        for future in tqdm(futures, total=n_games,
-                           desc="🎮 Generating games (threaded)"):
-            try:
-                pairs = future.result()
-                all_pairs.extend(pairs)
-                completed += 1
-                if completed % 10 == 0:
-                    tqdm.write(f"  {completed}/{n_games} games done, "
-                              f"{len(all_pairs)} positions collected")
-            except Exception as e:
-                tqdm.write(f"  ⚠ Game failed: {e} — skipping")
-                continue
+    result = get_result_value(board)
 
-    return all_pairs
+    # Label each position with outcome from that side's perspective
+    training_data = []
+    for tensor, policy_target, turn in history:
+        value_target = result if turn else -result
+        training_data.append((
+            tensor,
+            policy_target,
+            torch.tensor(float(value_target), dtype=torch.float32)
+        ))
+
+    return training_data
 
 
-def training_iteration(model, iteration, games_per_iter=50,
-                       epochs=3, device='cpu', n_workers=4):
+def generate_mcts_games(model, n_games=50, device='cuda',
+                        n_simulations=100):
+    """Generate games using MCTS — runs sequentially since GPU is shared."""
+    all_data = []
+
+    for i in tqdm(range(n_games), desc="🎮 MCTS self-play"):
+        game_data = self_play_game_mcts(model, device=device,
+                                        n_simulations=n_simulations)
+        all_data.extend(game_data)
+        if (i + 1) % 5 == 0:
+            tqdm.write(f"  {i+1}/{n_games} games done, "
+                      f"{len(all_data)} positions collected")
+
+    return all_data
+
+
+def training_iteration_mcts(model, iteration, games_per_iter=30,
+                             epochs=3, device='cuda',
+                             n_simulations=100):
+    """
+    One training iteration using MCTS self-play.
+    GPU is used for:
+      - MCTS batch inference (game generation)
+      - Neural network training
+    """
     import torch.nn as nn
+    import torch.nn.functional as F
     from torch.utils.data import TensorDataset, DataLoader
-    from model.net import ChessNet
 
-    print(f"\n=== Iteration {iteration} — Generating {games_per_iter} games ===")
+    print(f"\n=== Iteration {iteration} — "
+          f"Generating {games_per_iter} MCTS games ===")
     os.makedirs('checkpoints', exist_ok=True)
 
-    tmp_path = 'checkpoints/tmp_worker.pth'
-    torch.save(model.state_dict(), tmp_path)
+    model.to(device)
+    model.eval()
 
-    cpu_model = ChessNet()
-    cpu_model.load_state_dict(torch.load(tmp_path, map_location='cpu'))
-    cpu_model.eval()
+    # Generate games — GPU used here for batch inference
+    all_data = generate_mcts_games(model, n_games=games_per_iter,
+                                   device=device,
+                                   n_simulations=n_simulations)
 
-    all_pairs = generate_threaded(cpu_model,
-                                  n_games=games_per_iter,
-                                  depth=1,
-                                  n_workers=n_workers)
-
-    if len(all_pairs) == 0:
-        print("⚠ No pairs generated — skipping iteration")
+    if len(all_data) == 0:
+        print("⚠ No data generated — skipping")
         return model
 
-    tensors = torch.stack([
-        p[0] if isinstance(p[0], torch.Tensor)
-        else torch.tensor(p[0])
-        for p in all_pairs
-    ]).to(device)
-    labels = torch.stack([
-        p[1].detach().clone().float()
-        if isinstance(p[1], torch.Tensor)
-        else torch.tensor(float(p[1]), dtype=torch.float32)
-        for p in all_pairs
-    ]).to(device)
+    # Unpack training data
+    tensors  = torch.stack([d[0] for d in all_data]).to(device)
+    policies = torch.stack([d[1] for d in all_data]).to(device)
+    values   = torch.stack([d[2] for d in all_data]).to(device)
 
     print(f"📦 {len(tensors)} positions → training on {device}...")
-    dataset = TensorDataset(tensors, labels)
+
+    dataset = TensorDataset(tensors, policies, values)
     loader  = DataLoader(dataset, batch_size=512, shuffle=True)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    loss_fn   = nn.MSELoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3,
+                                 weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.StepLR(
                     optimizer, step_size=5, gamma=0.5)
     model.train()
 
     for epoch in tqdm(range(epochs), desc="🧠 Training", unit="epoch"):
-        total_loss = 0
-        for X, y in loader:
-            X, y = X.to(device), y.to(device)
+        total_value_loss  = 0
+        total_policy_loss = 0
+
+        for X, pol_target, val_target in loader:
+            X          = X.to(device)
+            pol_target = pol_target.to(device)
+            val_target = val_target.to(device)
+
             optimizer.zero_grad(set_to_none=True)
-            loss = loss_fn(model(X), y)
+
+            value, policy = model(X)
+
+            # Value loss — MSE
+            value_loss = nn.MSELoss()(value, val_target)
+
+            # Policy loss — cross entropy
+            policy_loss = -torch.mean(
+                torch.sum(
+                    pol_target * F.log_softmax(policy, dim=-1),
+                    dim=-1
+                )
+            )
+
+            # Combined loss
+            loss = value_loss + policy_loss
             loss.backward()
             optimizer.step()
-            total_loss += loss.item()
+
+            total_value_loss  += value_loss.item()
+            total_policy_loss += policy_loss.item()
 
         scheduler.step()
-        avg_loss = total_loss / len(loader)
-        tqdm.write(f"  Epoch {epoch+1}/{epochs}  loss: {avg_loss:.4f}")
+        avg_v = total_value_loss  / len(loader)
+        avg_p = total_policy_loss / len(loader)
+        tqdm.write(f"  Epoch {epoch+1}/{epochs}  "
+                   f"value_loss: {avg_v:.4f}  policy_loss: {avg_p:.4f}")
 
-        if avg_loss < 0.005:
-            tqdm.write(f"  ⚡ Early stop")
+        if avg_v < 0.005 and avg_p < 0.1:
+            tqdm.write("  ⚡ Early stop")
             break
 
     path = f'checkpoints/chess_net_iter{iteration}.pth'

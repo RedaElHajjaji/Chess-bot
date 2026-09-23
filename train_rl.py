@@ -8,8 +8,9 @@ import subprocess
 sys.path.insert(0, '/kaggle/working/Chess-bot')
 
 from model.net import ChessNet, load_model
-from self_play.loop import training_iteration
-from engine.search import make_minimax_bot, make_neural_eval, tournament
+from self_play.loop import training_iteration_mcts
+from engine.search import make_mcts_bot
+from engine.mcts import make_mcts_bot as mcts_bot_factory
 
 # ── Auto-detect GPU ──
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -25,22 +26,20 @@ else:
     print("Starting fresh model")
 
 os.makedirs('checkpoints', exist_ok=True)
-os.makedirs('/kaggle/working/chess-checkpoints', exist_ok=True)
+os.makedirs('/kaggle/working', exist_ok=True)
 
-# ── Kaggle Dataset push function ──
-KAGGLE_USERNAME = "redaelhajjaji"   # ← your Kaggle username
-DATASET_ID = f"{KAGGLE_USERNAME}/chess-bot-checkpoints"
-DATASET_DIR = '/kaggle/working/chess-checkpoints'
+# ── Kaggle Dataset push ──
+KAGGLE_USERNAME = "redaelhajjaji"
+DATASET_ID      = f"{KAGGLE_USERNAME}/chess-bot-checkpoints"
+DATASET_DIR     = '/kaggle/working/chess-checkpoints'
 
 def push_to_dataset(iteration):
-    """Push checkpoint to persistent Kaggle Dataset after every iteration."""
-    # Copy checkpoints to dataset folder
+    os.makedirs(DATASET_DIR, exist_ok=True)
     shutil.copy(f'checkpoints/chess_net_iter{iteration}.pth',
                 f'{DATASET_DIR}/chess_net_iter{iteration}.pth')
     shutil.copy('checkpoints/chess_net_latest.pth',
                 f'{DATASET_DIR}/chess_net_latest.pth')
 
-    # Write metadata
     meta = {
         "title": "chess-bot-checkpoints",
         "id": DATASET_ID,
@@ -49,7 +48,6 @@ def push_to_dataset(iteration):
     with open(f'{DATASET_DIR}/dataset-metadata.json', 'w') as f:
         json.dump(meta, f)
 
-    # Push new version
     result = subprocess.run(
         ['kaggle', 'datasets', 'version',
          '-p', DATASET_DIR,
@@ -60,65 +58,49 @@ def push_to_dataset(iteration):
     if result.returncode == 0:
         print(f"✓ Pushed iter{iteration} to Kaggle Dataset")
     else:
-        print(f"⚠ Dataset push failed: {result.stderr}")
-        print(f"  (checkpoint still saved to /kaggle/working/ as backup)")
+        print(f"⚠ Dataset push failed: {result.stderr[:100]}")
 
 # ── Training loop ──
-N_ITERATIONS = 20
+N_ITERATIONS   = 20
+N_SIMULATIONS  = 100   # MCTS simulations per move
+GAMES_PER_ITER = 30    # fewer games but much richer data
 
 for i in range(1, N_ITERATIONS + 1):
     print(f"\n{'='*50}")
     print(f"ITERATION {i} / {N_ITERATIONS}")
     print(f"{'='*50}")
 
-    model = training_iteration(
+    model = training_iteration_mcts(
         model,
         iteration=i,
-        games_per_iter=50,
-        epochs=3,            # reduced to prevent memorization
+        games_per_iter=GAMES_PER_ITER,
+        epochs=3,
         device=device,
-        n_workers=4
+        n_simulations=N_SIMULATIONS
     )
 
-    # Save locally
+    # Save everywhere
     torch.save(model.state_dict(), f'checkpoints/chess_net_iter{i}.pth')
     torch.save(model.state_dict(), 'checkpoints/chess_net_latest.pth')
-
-    # Save to /kaggle/working/ output
     shutil.copy('checkpoints/chess_net_latest.pth',
                 '/kaggle/working/chess_net_latest.pth')
     shutil.copy(f'checkpoints/chess_net_iter{i}.pth',
                 f'/kaggle/working/chess_net_iter{i}.pth')
-
-    # Push to persistent Kaggle Dataset
     push_to_dataset(i)
-
     print(f"✓ iter{i} saved everywhere — safe to stop anytime")
 
     # Benchmark every 5 iterations
-    # Benchmark every 5 iterations — depth 1 to match training
-    # Benchmark every 5 iterations — depth 1 to match training
     if i % 5 == 0:
+        from engine.search import tournament, make_minimax_bot
+        from engine.mcts import make_mcts_bot
         from model.net import load_model as lm
 
-        # Move current model to CPU for benchmark
+        print(f"\n--- Benchmark: iter{i} MCTS vs handcrafted minimax ---")
         model.cpu()
-        neural_eval = make_neural_eval(model, device='cpu')
-        neural_bot  = make_minimax_bot(depth=1, eval_fn=neural_eval)
-
-        iter1_path = 'checkpoints/chess_net_iter1.pth'
-        if os.path.exists(iter1_path):
-            early_model = lm(iter1_path, device='cpu')
-            early_eval  = make_neural_eval(early_model, device='cpu')
-            early_bot   = make_minimax_bot(depth=1, eval_fn=early_eval)
-            print(f"\n--- Benchmark: iter{i} vs iter1 (depth 1) ---")
-            tournament(neural_bot, early_bot, n_games=10)
-        else:
-            baseline = make_minimax_bot(depth=1)
-            print(f"\n--- Benchmark: iter{i} vs handcrafted (depth 1) ---")
-            tournament(neural_bot, baseline, n_games=10)
-
-        # Move model back to GPU for next training iteration
+        mcts_bot = make_mcts_bot(model, device='cpu',
+                                 n_simulations=50)
+        baseline = make_minimax_bot(depth=2)
+        tournament(mcts_bot, baseline, n_games=5)
         model.to(device)
 
 print("\n✓ Training complete!")

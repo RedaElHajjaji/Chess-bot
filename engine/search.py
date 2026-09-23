@@ -2,6 +2,8 @@
 import chess
 import random
 from tqdm import tqdm
+# Add to existing imports at top of engine/search.py
+from engine.mcts import make_mcts_bot
 
 def random_move(board: chess.Board) -> chess.Move:
     """Pick a random legal move."""
