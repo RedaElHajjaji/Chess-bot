@@ -22,7 +22,7 @@ def generate_stockfish_games(
         stockfish_elo=1200,
         think_time=0.05,
         output_path='data/stockfish_data.pt',
-        stockfish_path='stockfish'):
+        stockfish_path='/usr/games/stockfish'):
     """
     Generate training data from Stockfish self-play.
 
@@ -142,6 +142,7 @@ if __name__ == '__main__':
         stockfish_elo=1320,
         think_time=0.05,
         output_path='data/stockfish_1320.pt'
+        stockfish_path='/usr/games/stockfish'
     )
 
     # Stage 2 — intermediate
