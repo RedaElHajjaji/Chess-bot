@@ -120,7 +120,7 @@ def train_curriculum(device='cpu'):
     """
 
     # ── Load or create model ──
-    checkpoint = '../checkpoints/chess_net_latest.pth'
+    checkpoint = 'checkpoints/chess_net_latest.pth'
     if os.path.exists(checkpoint):
         model = load_model(checkpoint, device=device)
         print(f"✓ Loaded existing checkpoint: {checkpoint}")
@@ -142,7 +142,7 @@ def train_curriculum(device='cpu'):
             dataset_name='ELO 1350 (entry level)'
         )
         torch.save(model.state_dict(),
-                   '../checkpoints/supervised_stage1.pth')
+                   'checkpoints/supervised_stage1.pth')
         print("✓ Stage 1 checkpoint saved")
     else:
         print("⚠ Skipping Stage 1 — dataset not found")
@@ -159,7 +159,7 @@ def train_curriculum(device='cpu'):
             dataset_name='ELO 1500 (intermediate)'
         )
         torch.save(model.state_dict(),
-                   '../checkpoints/supervised_stage2.pth')
+                   'checkpoints/supervised_stage2.pth')
         print("✓ Stage 2 checkpoint saved")
     else:
         print("⚠ Skipping Stage 2 — dataset not found")
@@ -176,16 +176,16 @@ def train_curriculum(device='cpu'):
             dataset_name='ELO 1800 (stronger)'
         )
         torch.save(model.state_dict(),
-                   '../checkpoints/supervised_stage3.pth')
+                   'checkpoints/supervised_stage3.pth')
         print("✓ Stage 3 checkpoint saved")
     else:
         print("⚠ Skipping Stage 3 — dataset not found")
 
     # ── Save final model ──
     torch.save(model.state_dict(),
-               '../checkpoints/chess_net_latest.pth')
+               'checkpoints/chess_net_latest.pth')
     torch.save(model.state_dict(),
-               '../checkpoints/chess_net_supervised.pth')
+               'checkpoints/chess_net_supervised.pth')
 
     print("\n" + "="*50)
     print("✓ Supervised training complete!")
