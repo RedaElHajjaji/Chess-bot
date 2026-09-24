@@ -1,4 +1,3 @@
-<!-- webapp/static/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,35 +7,121 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app">
 
-    <div class="board-wrap">
-      <div class="coords-top">
-        <span>a</span><span>b</span><span>c</span><span>d</span>
-        <span>e</span><span>f</span><span>g</span><span>h</span>
+<div class="app">
+
+  <!-- Board side -->
+  <div class="board-side">
+    <div class="player-info top">
+      <div class="player-avatar bot">♟</div>
+      <div class="player-details">
+        <span class="player-name" id="bot-name">Balanced Bot</span>
+        <span class="player-elo" id="bot-elo">~900 ELO</span>
       </div>
-      <div id="board"></div>   <!-- 64 square divs injected by JS -->
+      <div class="thinking-indicator" id="thinking">
+        <span></span><span></span><span></span>
+      </div>
     </div>
 
-    <aside class="sidebar">
-      <h1>♟ Chess Bot</h1>
-      <div id="status" class="status">Your turn (White)</div>
-      <div id="eval-bar" class="eval-bar"></div>
-
-      <div class="controls">
-        <button onclick="resetGame()">New game</button>
-        <button onclick="flipBoard()">Flip board</button>
-        <select id="difficulty" onchange="setDifficulty(this.value)">
-          <option value="1">Easy (depth 1)</option>
-          <option value="2">Medium (depth 2)</option>
-          <option value="3" selected>Hard (depth 3)</option>
-        </select>
+    <div class="board-wrap">
+      <div class="coords-left" id="coords-left">
+        <span>8</span><span>7</span><span>6</span><span>5</span>
+        <span>4</span><span>3</span><span>2</span><span>1</span>
       </div>
+      <div id="board"></div>
+    </div>
 
-      <div id="move-list" class="move-list"></div>
-    </aside>
+    <div class="coords-bottom" id="coords-bottom">
+      <span>a</span><span>b</span><span>c</span><span>d</span>
+      <span>e</span><span>f</span><span>g</span><span>h</span>
+    </div>
 
+    <div class="player-info bottom">
+      <div class="player-avatar you">👤</div>
+      <div class="player-details">
+        <span class="player-name">You</span>
+        <span class="player-elo">White</span>
+      </div>
+    </div>
   </div>
-  <script src="game.js"></script>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="logo">♟ Chess Bot</span>
+    </div>
+
+    <!-- Status -->
+    <div class="status-card">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">Your turn</span>
+    </div>
+
+    <!-- Personality selector -->
+    <div class="section">
+      <div class="section-label">Bot Personality</div>
+      <div class="personality-grid">
+        <button class="personality-btn active" data-personality="balanced"
+                onclick="setPersonality('balanced')">
+          <span class="p-emoji">⚖️</span>
+          <span class="p-name">Balanced</span>
+          <span class="p-elo">~900</span>
+        </button>
+        <button class="personality-btn" data-personality="greedy"
+                onclick="setPersonality('greedy')">
+          <span class="p-emoji">💰</span>
+          <span class="p-name">Greedy</span>
+          <span class="p-elo">~800</span>
+        </button>
+        <button class="personality-btn" data-personality="defensive"
+                onclick="setPersonality('defensive')">
+          <span class="p-emoji">🛡️</span>
+          <span class="p-name">Defensive</span>
+          <span class="p-elo">~850</span>
+        </button>
+        <button class="personality-btn" data-personality="aggressive"
+                onclick="setPersonality('aggressive')">
+          <span class="p-emoji">⚔️</span>
+          <span class="p-name">Aggressive</span>
+          <span class="p-elo">~950</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="section">
+      <div class="section-label">Controls</div>
+      <div class="controls">
+        <button class="btn btn-primary" onclick="resetGame()">
+          ↺ New Game
+        </button>
+        <button class="btn btn-secondary" onclick="flipBoard()">
+          ⇅ Flip Board
+        </button>
+      </div>
+    </div>
+
+    <!-- Move history -->
+    <div class="section moves-section">
+      <div class="section-label">Move History</div>
+      <div class="move-list" id="move-list">
+        <span class="no-moves">No moves yet</span>
+      </div>
+    </div>
+
+    <!-- Game result -->
+    <div class="result-banner" id="result-banner" style="display:none">
+      <div class="result-icon" id="result-icon">🏁</div>
+      <div class="result-text" id="result-text">Game Over</div>
+      <div class="result-sub" id="result-sub"></div>
+      <button class="btn btn-primary" onclick="resetGame()">
+        Play Again
+      </button>
+    </div>
+
+  </aside>
+</div>
+
+<script src="game.js"></script>
 </body>
 </html>

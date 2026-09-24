@@ -223,28 +223,91 @@ def make_neural_eval(model, device='cpu'):
 # neural_bot = make_minimax_bot(depth=3, eval_fn=neural_eval)
 
 
-def make_personality_eval(model, personality="balanced"):
-    """Wrap neural eval with a personality modifier."""
-    neural_eval = make_neural_eval(model)
+# Add to engine/search.py
+
+def make_personality_eval(model, personality="balanced", device='cpu'):
+    """
+    Wraps neural eval with a personality bias.
+    Works with both old single-head and new dual-head ChessNet.
+    """
+    import chess as _chess
+
+    def get_value(board):
+        """Get raw value from model — handles both architectures."""
+        from engine.board import board_to_tensor
+        with torch.no_grad():
+            tensor = board_to_tensor(board).unsqueeze(0).to(device)
+            output = model(tensor)
+            # Handle both single-head (tensor) and dual-head (tuple)
+            if isinstance(output, tuple):
+                value = output[0]
+            else:
+                value = output
+            return value.item()
 
     def personality_eval(board):
-        score = neural_eval(board)
+        if board.is_checkmate():
+            return -99999 if board.turn else 99999
+        if board.is_stalemate() or board.is_insufficient_material():
+            return 0.0
 
-        if personality == "greedy":   # Isabel mode
-            # Bonus for capturing enemy pawns with our queen
-            for sq in board.pieces(chess.PAWN, chess.BLACK):
-                if board.is_attacked_by(chess.WHITE, sq):
-                    score += 500
-            # Reward queen aggression
-            for sq in board.pieces(chess.QUEEN, chess.WHITE):
-                score += chess.square_rank(sq) * 20
+        score = get_value(board) * 10000
+
+        if personality == "greedy":
+            # Obsessed with capturing pawns — Isabel mode
+            for sq in board.pieces(_chess.PAWN, _chess.BLACK):
+                if board.is_attacked_by(_chess.WHITE, sq):
+                    score += 150
+            # Queen aggression
+            for sq in board.pieces(_chess.QUEEN, _chess.WHITE):
+                score += _chess.square_rank(sq) * 20
+            # Loves trading
+            score += (16 - len(board.pieces(
+                _chess.PAWN, _chess.BLACK))) * 50
 
         elif personality == "defensive":
-            # Penalize any undefended piece
-            for sq in board.pieces(chess.PAWN, chess.WHITE):
-                if not board.is_attacked_by(chess.WHITE, sq):
-                    score -= 50
+            # Turtle mode — protect everything
+            for sq in board.pieces(_chess.PAWN, _chess.WHITE):
+                if board.is_attacked_by(_chess.WHITE, sq):
+                    score += 50
+            # Penalize advanced exposed pieces
+            for sq in board.pieces(_chess.KNIGHT, _chess.WHITE):
+                if _chess.square_rank(sq) > 4:
+                    score -= 80
+            for sq in board.pieces(_chess.BISHOP, _chess.WHITE):
+                if _chess.square_rank(sq) > 4:
+                    score -= 60
+            # King safety bonus
+            king_sq = board.king(_chess.WHITE)
+            if king_sq and _chess.square_file(king_sq) in [0,1,6,7]:
+                score += 100
+
+        elif personality == "aggressive":
+            # Attack mode — push everything forward
+            for piece_type in [_chess.KNIGHT, _chess.BISHOP, _chess.ROOK]:
+                for sq in board.pieces(piece_type, _chess.WHITE):
+                    score += _chess.square_rank(sq) * 15
+            # Bonus for proximity to enemy king
+            enemy_king = board.king(_chess.BLACK)
+            if enemy_king:
+                for sq in board.pieces(_chess.QUEEN, _chess.WHITE):
+                    dist = _chess.square_distance(sq, enemy_king)
+                    score += (7 - dist) * 20
+            # Bonus for pawns in enemy territory
+            for sq in board.pieces(_chess.PAWN, _chess.WHITE):
+                if _chess.square_rank(sq) >= 5:
+                    score += 80
 
         return score
 
     return personality_eval
+
+
+def make_personality_bot(model, personality="balanced",
+                         device='cpu', depth=2):
+    """
+    Returns a minimax bot with personality eval.
+    Used in the web app for fast response times.
+    """
+    eval_fn = make_personality_eval(model, personality, device)
+    return make_minimax_bot(depth=depth, eval_fn=eval_fn)
