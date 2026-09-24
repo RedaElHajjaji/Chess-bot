@@ -6,15 +6,3 @@ data/          # self-play game data
 *.egg-info/
 .DS_Store
 
-# Model checkpoints
-checkpoints/
-*.pth
-
-# Training data
-data/*.pt
-data/*.bin
-
-# Python cache
-__pycache__/
-*.pyc
-venv/
