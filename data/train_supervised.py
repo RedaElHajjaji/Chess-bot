@@ -113,7 +113,7 @@ def train_curriculum(device='cpu'):
     """
     Curriculum learning:
     1. Load existing checkpoint if available
-    2. Train on ELO 1320 (entry level Stockfish)
+    2. Train on ELO 1350 (entry level Stockfish)
     3. Train on ELO 1500 (intermediate)
     4. Train on ELO 1800 (stronger)
     5. Save final model
@@ -130,8 +130,8 @@ def train_curriculum(device='cpu'):
 
     os.makedirs('../checkpoints', exist_ok=True)
 
-    # ── Stage 1: ELO 1320 — entry level ──
-    X1, y1 = load_dataset('data/stockfish_1320.pt')
+    # ── Stage 1: ELO 1350 — entry level ──
+    X1, y1 = load_dataset('data/stockfish_1350.pt')
     if X1 is not None:
         model = train_on_dataset(
             model, X1, y1,
@@ -139,7 +139,7 @@ def train_curriculum(device='cpu'):
             batch_size=512,
             lr=1e-3,
             device=device,
-            dataset_name='ELO 1320 (entry level)'
+            dataset_name='ELO 1350 (entry level)'
         )
         torch.save(model.state_dict(),
                    '../checkpoints/supervised_stage1.pth')

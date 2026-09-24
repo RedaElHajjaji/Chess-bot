@@ -136,12 +136,12 @@ def generate_stockfish_games(
 
 if __name__ == '__main__':
 
-    # Stage 1 — minimum ELO (1320 is Stockfish's lowest)
+    # Stage 1 — minimum ELO (1350 is Stockfish's lowest)
     generate_stockfish_games(
         n_games=500,
-        stockfish_elo=1320,
+        stockfish_elo=1350,
         think_time=0.05,
-        output_path='data/stockfish_1320.pt'
+        output_path='data/stockfish_1350.pt'
         stockfish_path='/usr/games/stockfish'
     )
 
